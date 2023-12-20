@@ -99,7 +99,7 @@ int main(int argc, char* argv[])
 			default:
 				chosenIV = 2;
 		}
-		if (chosenIV = 2) {
+		if (chosenIV == 2) {
 			switch (*argv[3]) {
 				case '1':
 					dir = 1;
