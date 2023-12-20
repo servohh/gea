@@ -4,19 +4,22 @@
 #include <stdbool.h>
 #include <time.h>
 
+typedef uint64_t word;
+typedef uint8_t bit;
+
 // Returns an unsigned 64-bit int consisting of all 0's except a 1 in the position denoted by pos, 
 // e.g.: bitMask(0) returns 0b1, bitMask(5) returns 0b100000.
 // Assumes 0 <= pos <= 63
-uint64_t bitMask(int pos) 
+word bitMask(unsigned int pos) 
 {
-	uint64_t bit = 0b1;
+	word bit = 0b1;
 	bit <<= pos;
 	return bit;
 }
 
 // Returns 0 or 1 depending on the value of the bit at position pos in n.
 // e.g.: testBit(0b1000, 3) returns 1, testBit(0b1000, 2) returns 0.
-uint8_t testBit(uint64_t n, int pos)
+bit testBit(word n, unsigned int pos)
 {
 	if (n & bitMask(pos) > 0) {
 		return 1;
@@ -26,7 +29,7 @@ uint8_t testBit(uint64_t n, int pos)
 }
 
 // GEA-1 nonlinear function
-uint8_t f(uint8_t x0, uint8_t x1, uint8_t x2, uint8_t x3, uint8_t x4, uint8_t x5, uint8_t x6) 
+bit f(bit x0, bit x1, bit x2, bit x3, bit x4, bit x5, bit x6) 
 {
 	return (x0*x2*x5*x6 + x0*x3*x5*x6 + x0*x1*x5*x6 + x1*x2*x5*x6 + x0*x2*x3*x6 + x1*x3*x4*x6 + x1*x3*x5*x6 + x0*x2*x4 + x0*x2*x3 + x0*x1*x3 + x0*x2*x6 + x0*x1*x4 + x0*x1*x6 + x1*x2*x6 + x2*x5*x6 + x0*x3*x5 + x1*x4*x6 + x1*x2*x5 + x0*x3 + x0*x5 + x1*x3 + x1*x5 + x1*x6 + x0*x2 + x1 + x2*x3 + x2*x5 + x2*x6 + x4*x5 + x5*x6 + x2 + x3 + x5) % 2;
 }
@@ -34,15 +37,15 @@ uint8_t f(uint8_t x0, uint8_t x1, uint8_t x2, uint8_t x3, uint8_t x4, uint8_t x5
 // Galois LFSR struct
 struct lfsr
 {
-	uint64_t state;
-	uint64_t taps;
-	int length;
+	word state;
+	word taps;
+	unsigned int length;
 };
 
 // Galois LFSR clock function
-uint64_t clock_lfsr(struct lfsr reg, uint8_t in) 
+word clock_lfsr(struct lfsr reg, bit in) 
 {
-	uint8_t output = testBit(reg.state, reg.length - 1);
+	bit output = testBit(reg.state, reg.length - 1);
 	output ^= in;
 	reg.state <<= 1;
 	if (output == 1) {
@@ -52,10 +55,10 @@ uint64_t clock_lfsr(struct lfsr reg, uint8_t in)
 }
 
 // Clock function for the non-linear feedback register S
-uint64_t clock_S(uint64_t reg, uint8_t in) 
+word clock_S(word reg, bit in) 
 {
-	uint8_t output = testBit(reg, 63);
-	uint8_t fOut = f(testBit(reg, 60), testBit(reg, 51), testBit(reg, 41), testBit(reg, 25), testBit(reg, 21), testBit(reg, 8), testBit(reg, 0));
+	bit output = testBit(reg, 63);
+	bit fOut = f(testBit(reg, 60), testBit(reg, 51), testBit(reg, 41), testBit(reg, 25), testBit(reg, 21), testBit(reg, 8), testBit(reg, 0));
 	reg <<= 1;
 	reg ^= in ^ fOut ^ output;
 	return reg;
@@ -83,7 +86,7 @@ int main(int argc, char* argv[])
 	
 	bool chosenDir = false;
 	int chosenIV = 0;
-	uint8_t dir = 0;
+	bit dir = 0;
 	
 	if (argc == 5) {
 		chosenDir = true;
@@ -124,7 +127,7 @@ int main(int argc, char* argv[])
 	char* ivFileName = argv[chosenIV]; // if chosenIV == 0, the value of this will not matter
 
 	// Initializing variables
-	uint64_t key = 0;
+	word key = 0;
 	FILE* keyFile = fopenErr(keyFileName, "r");
 	if (keyFile == NULL) return 1;
 	fscanf(keyFile, "%x", &key);
@@ -166,7 +169,7 @@ int main(int argc, char* argv[])
 	struct lfsr A = {0, 0b1101100011101100100011011101110, 31};
 	struct lfsr B = {0, 0b11010001000001111000000111000111, 32};
 	struct lfsr C = {0, 0b100100100010111110110011100001010, 33};
-	uint64_t S = 0;
+	word S = 0;
 	
 	// Initialization of S
 	for (int i = 0;i < 8*sizeof(iv);i++) {
@@ -202,24 +205,22 @@ int main(int argc, char* argv[])
 
 	// Encrypting the message
 	char* ciphertext = malloc(1601*sizeof(char));
-	char keystream;
-	uint8_t streamBits;
+	unsigned char keystream;
 	for (int i = 0;i < 1601;i++) {
 		if (plaintext[i] == EOF) break;
-		streamBits = 0;
+		keystream = 0;
 		for (int i = 0;i < 8;i++) {
-			uint8_t f_A = f(testBit(A.state, 8), testBit(A.state, 30), testBit(A.state, 17), testBit(A.state, 9), testBit(A.state, 5), testBit(A.state, 23), testBit(A.state, 28));
-			uint8_t f_B = f(testBit(B.state, 18), testBit(B.state, 4), testBit(B.state, 31), testBit(B.state, 30), testBit(B.state, 2), testBit(B.state, 10), testBit(B.state, 26));
-			uint8_t f_C = f(testBit(C.state, 22), testBit(C.state, 2), testBit(C.state, 0), testBit(C.state, 29), testBit(C.state, 13), testBit(C.state, 32), testBit(C.state, 28));
+			bit f_A = f(testBit(A.state, 8), testBit(A.state, 30), testBit(A.state, 17), testBit(A.state, 9), testBit(A.state, 5), testBit(A.state, 23), testBit(A.state, 28));
+			bit f_B = f(testBit(B.state, 18), testBit(B.state, 4), testBit(B.state, 31), testBit(B.state, 30), testBit(B.state, 2), testBit(B.state, 10), testBit(B.state, 26));
+			bit f_C = f(testBit(C.state, 22), testBit(C.state, 2), testBit(C.state, 0), testBit(C.state, 29), testBit(C.state, 13), testBit(C.state, 32), testBit(C.state, 28));
 
-			streamBits ^= f_A ^ f_B ^ f_C;
-			streamBits <<= 1;
+			keystream |= f_A ^ f_B ^ f_C;
+			keystream <<= 1;
 
 			A.state = clock_lfsr(A, 0);
 			B.state = clock_lfsr(B, 0);
 			C.state = clock_lfsr(C, 0);
 		}
-		char keystream = (char) streamBits;
 		ciphertext[i] = plaintext[i] ^ keystream;
 	}
 
