@@ -21,7 +21,7 @@ word bitMask(unsigned int pos)
 // e.g.: testBit(0b1000, 3) returns 1, testBit(0b1000, 2) returns 0.
 bit testBit(word n, unsigned int pos)
 {
-	if (n & bitMask(pos) > 0) {
+	if ((n & bitMask(pos)) != 0) {
 		return 1;
 	} else {
 		return 0;
@@ -31,7 +31,7 @@ bit testBit(word n, unsigned int pos)
 // GEA-1 nonlinear function
 bit f(bit x0, bit x1, bit x2, bit x3, bit x4, bit x5, bit x6) 
 {
-	return (x0*x2*x5*x6 + x0*x3*x5*x6 + x0*x1*x5*x6 + x1*x2*x5*x6 + x0*x2*x3*x6 + x1*x3*x4*x6 + x1*x3*x5*x6 + x0*x2*x4 + x0*x2*x3 + x0*x1*x3 + x0*x2*x6 + x0*x1*x4 + x0*x1*x6 + x1*x2*x6 + x2*x5*x6 + x0*x3*x5 + x1*x4*x6 + x1*x2*x5 + x0*x3 + x0*x5 + x1*x3 + x1*x5 + x1*x6 + x0*x2 + x1 + x2*x3 + x2*x5 + x2*x6 + x4*x5 + x5*x6 + x2 + x3 + x5) % 2;
+	return x0&x2&x5&x6 ^ x0&x3&x5&x6 ^ x0&x1&x5&x6 ^ x1&x2&x5&x6 ^ x0&x2&x3&x6 ^ x1&x3&x4&x6 ^ x1&x3&x5&x6 ^ x0&x2&x4 ^ x0&x2&x3 ^ x0&x1&x3 ^ x0&x2&x6 ^ x0&x1&x4 ^ x0&x1&x6 ^ x1&x2&x6 ^ x2&x5&x6 ^ x0&x3&x5 ^ x1&x4&x6 ^ x1&x2&x5 ^ x0&x3 ^ x0&x5 ^ x1&x3 ^ x1&x5 ^ x1&x6 ^ x0&x2 ^ x1 ^ x2&x3 ^ x2&x5 ^ x2&x6 ^ x4&x5 ^ x5&x6 ^ x2 ^ x3 ^ x5;
 }
 
 // Galois LFSR struct
@@ -48,7 +48,7 @@ word clock_lfsr(struct lfsr reg, bit in)
 	bit output = testBit(reg.state, reg.length - 1);
 	output ^= in;
 	reg.state <<= 1;
-	if (output == 1) {
+	if (output) {
 		reg.state ^= reg.taps;
 	}
 	return reg.state;
@@ -57,9 +57,9 @@ word clock_lfsr(struct lfsr reg, bit in)
 // Clock function for the non-linear feedback register S
 word clock_S(word reg, bit in) 
 {
-	bit output = testBit(reg, 63);
-	bit fOut = f(testBit(reg, 60), testBit(reg, 51), testBit(reg, 41), testBit(reg, 25), testBit(reg, 21), testBit(reg, 8), testBit(reg, 0));
-	reg <<= 1;
+	bit output = testBit(reg, 0);
+	bit fOut = f(testBit(reg, 3), testBit(reg, 12), testBit(reg, 22), testBit(reg, 38), testBit(reg, 42), testBit(reg, 55), testBit(reg, 63));
+	reg >>= 1;
 	reg ^= in ^ fOut ^ output;
 	return reg;
 }
@@ -130,17 +130,15 @@ int main(int argc, char* argv[])
 	word key = 0;
 	FILE* keyFile = fopenErr(keyFileName, "r");
 	if (keyFile == NULL) return 1;
-	fscanf(keyFile, "%x", &key);
+	fscanf(keyFile, "%lx", &key);
 	fclose(keyFile);
 
 	char* plaintext = malloc(1601*sizeof(char));
 	FILE* inFile = fopenErr(inFileName, "r");
 	if (inFile == NULL) return 1;
-	char inChar;
 	for (int i = 0;i < 1601;i++) {
-		inChar = fgetc(inFile);
-		plaintext[i] = inChar;
-		if (inChar == EOF) break;
+		plaintext[i] = fgetc(inFile);
+		if (plaintext[i] == EOF) break;
 	}
 	fclose(inFile);
 
@@ -166,9 +164,9 @@ int main(int argc, char* argv[])
 		printf("Successfully read IV from %s\n", ivFileName);
 	}
 
-	struct lfsr A = {0, 0b1101100011101100100011011101110, 31};
-	struct lfsr B = {0, 0b11010001000001111000000111000111, 32};
-	struct lfsr C = {0, 0b100100100010111110110011100001010, 33};
+	struct lfsr A = {0, 0b1011000111011001000110111011101, 31};
+	struct lfsr B = {0, 0b10100010000011110000001110001111, 32};
+	struct lfsr C = {0, 0b0001001000101111101100111000010101, 33};
 	word S = 0;
 	
 	// Initialization of S
@@ -207,9 +205,12 @@ int main(int argc, char* argv[])
 	char* ciphertext = malloc(1601*sizeof(char));
 	unsigned char keystream;
 	for (int i = 0;i < 1601;i++) {
-		if (plaintext[i] == EOF) break;
+		if (plaintext[i] == EOF) {
+			ciphertext[i] = EOF;
+			break;
+		}
 		keystream = 0;
-		for (int i = 0;i < 8;i++) {
+		for (int j = 0;j < 8;j++) {
 			bit f_A = f(testBit(A.state, 8), testBit(A.state, 30), testBit(A.state, 17), testBit(A.state, 9), testBit(A.state, 5), testBit(A.state, 23), testBit(A.state, 28));
 			bit f_B = f(testBit(B.state, 18), testBit(B.state, 4), testBit(B.state, 31), testBit(B.state, 30), testBit(B.state, 2), testBit(B.state, 10), testBit(B.state, 26));
 			bit f_C = f(testBit(C.state, 22), testBit(C.state, 2), testBit(C.state, 0), testBit(C.state, 29), testBit(C.state, 13), testBit(C.state, 32), testBit(C.state, 28));
@@ -227,8 +228,10 @@ int main(int argc, char* argv[])
 	char* outFileName = malloc(133*sizeof(char));
 	sprintf(outFileName, "%.128s-enc", inFileName);
 	FILE* outFile = fopenErr(outFileName, "w");
-	int out = fputs(ciphertext, outFile);
-	if (out == EOF) return 1;
+	for (int i = 0;i < 1601;i++) {
+		if (ciphertext[i] == EOF) break;
+                fputc(ciphertext[i], outFile);
+        }
 	fclose(outFile);
 
 	printf("Wrote encrypted file to %s\n", outFileName);
