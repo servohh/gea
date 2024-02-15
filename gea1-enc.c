@@ -21,7 +21,7 @@ word bitMask(unsigned int pos)
 // e.g.: testBit(0b1000, 3) returns 1, testBit(0b1000, 2) returns 0.
 bit testBit(word n, unsigned int pos)
 {
-	if ((n & bitMask(pos)) != 0) {
+	if ((n & bitMask(pos))) {
 		return 1;
 	} else {
 		return 0;
@@ -45,9 +45,9 @@ struct lfsr
 // Galois LFSR clock function
 word clock_lfsr(struct lfsr reg, bit in) 
 {
-	bit output = testBit(reg.state, reg.length - 1);
+	bit output = testBit(reg.state, 0);
 	output ^= in;
-	reg.state <<= 1;
+	reg.state >>= 1;
 	if (output) {
 		reg.state ^= reg.taps;
 	}
@@ -59,8 +59,10 @@ word clock_S(word reg, bit in)
 {
 	bit output = testBit(reg, 0);
 	bit fOut = f(testBit(reg, 3), testBit(reg, 12), testBit(reg, 22), testBit(reg, 38), testBit(reg, 42), testBit(reg, 55), testBit(reg, 63));
+	word mask = in ^ (fOut ^ output);
+	mask <<= 63;
 	reg >>= 1;
-	reg ^= in ^ fOut ^ output;
+	reg ^= mask;
 	return reg;
 }
 
@@ -72,6 +74,28 @@ FILE* fopenErr(char* filename, char* mode)
 		fprintf(stderr, "gea1-enc: error opening file %s\n", filename);
 	}
 	return file;
+}
+
+int readBytes(FILE* file, char* buf, int size)
+{
+	char c;
+	int i = 0;
+	while (i < size) {
+		c = fgetc(file);
+		if (c == EOF) break;
+		buf[i] = c;
+		i++;
+	}
+	return i;
+}
+
+void writeBytes(FILE* file, char* buf, int size)
+{
+	char c;
+	for (int i = 0;i < size;i++) {
+		c = buf[i];
+                fputc(c, file);
+        }
 }
 
 int main(int argc, char* argv[])
@@ -128,18 +152,22 @@ int main(int argc, char* argv[])
 
 	// Initializing variables
 	word key = 0;
+	char* keyBuf = malloc(8*sizeof(char));
 	FILE* keyFile = fopenErr(keyFileName, "r");
 	if (keyFile == NULL) return 1;
-	fscanf(keyFile, "%lx", &key);
+	readBytes(keyFile, keyBuf, 8);
 	fclose(keyFile);
+	for (int i = 0;i < 8;i++) {
+		key <<= 8;
+		key ^= ((word)keyBuf[i]) & 0xFF;
+	}
+	free(keyBuf);
 
 	char* plaintext = malloc(1601*sizeof(char));
+	int ptSize;
 	FILE* inFile = fopenErr(inFileName, "r");
 	if (inFile == NULL) return 1;
-	for (int i = 0;i < 1601;i++) {
-		plaintext[i] = fgetc(inFile);
-		if (plaintext[i] == EOF) break;
-	}
+	ptSize = readBytes(inFile, plaintext, 1601);
 	fclose(inFile);
 
 	if (chosenDir == false) dir = rand() % 2;
@@ -149,34 +177,44 @@ int main(int argc, char* argv[])
 
 	if (chosenIV == 0) {
 		iv = rand();
+		char* ivOutBuf = malloc(4*sizeof(char));
 		char* ivOutFileName = malloc(132*sizeof(char));
 		sprintf(ivOutFileName, "%.128s-iv", inFileName);
 		FILE* ivOutFile = fopenErr(ivOutFileName, "w");
 		if (ivOutFile == NULL) return 1;
-		fprintf(ivOutFile, "%x", iv);
+		for (int i = 0;i < 4;i++) {
+			ivOutBuf[i] = (iv >> (24 - (i*8))) & 0xFF;
+		}
+		writeBytes(ivOutFile, ivOutBuf, 4);
 		fclose(ivOutFile);
+		free(ivOutBuf);
 		printf("Wrote generated IV to %s\n", ivOutFileName);
 	} else {
+		char* ivBuf = malloc(4*sizeof(char));
 		FILE* ivFile = fopen(ivFileName, "r");
 		if (ivFile == NULL) return 1;
-		fscanf(ivFile, "%x", &iv);
+		readBytes(ivFile, ivBuf, 4);
 		fclose(ivFile);
+		for (int i = 0;i < 4;i++) {
+			iv <<= 8;
+			iv ^= ((uint32_t)ivBuf[i]) & 0xFF;
+		}
 		printf("Successfully read IV from %s\n", ivFileName);
 	}
 
-	struct lfsr A = {0, 0b1011000111011001000110111011101, 31};
-	struct lfsr B = {0, 0b10100010000011110000001110001111, 32};
-	struct lfsr C = {0, 0b0001001000101111101100111000010101, 33};
+	struct lfsr A = {0, 0b1011101110110001001101110001101, 31};
+	struct lfsr B = {0, 0b11110001110000001111000001000101, 32};
+	struct lfsr C = {0, 0b101010000111001101111101000100100, 33};
 	word S = 0;
-	
+	     
 	// Initialization of S
-	for (int i = 0;i < 8*sizeof(iv);i++) {
+	for (int i = 31;i >= 0;i--) {
 		S = clock_S(S, testBit(iv, i));
 	}
 	
 	S = clock_S(S, dir);
 	
-	for (int i = 0;i < 8*sizeof(key);i++) {
+	for (int i = 63;i >= 0;i--) {
 		S = clock_S(S, testBit(key, i));
 	}
 	
@@ -185,16 +223,16 @@ int main(int argc, char* argv[])
 	}
 
 	// Initialization of LFSRs
-	for (int i = 0;i < 8*sizeof(S);i++) {
+	for (int i = 0;i < 64;i++) {
 		A.state = clock_lfsr(A, testBit(S, i));
 	}
 
-	for (int i = 0;i < 8*sizeof(S);i++) {
-		B.state = clock_lfsr(B, testBit(S, (i + 16) % 8*sizeof(S)));
+	for (int i = 0;i < 64;i++) {
+		B.state = clock_lfsr(B, testBit(S, (i + 16) % 64));
 	}
 	
-	for (int i = 0;i< 8*sizeof(S);i++) {
-		C.state = clock_lfsr(C, testBit(S, (i + 32) % 8*sizeof(S)));
+	for (int i = 0;i< 64;i++) {
+		C.state = clock_lfsr(C, testBit(S, (i + 32) % 64));
 	}
 
 	if (A.state == 0) A.state = 1;
@@ -205,18 +243,17 @@ int main(int argc, char* argv[])
 	char* ciphertext = malloc(1601*sizeof(char));
 	unsigned char keystream;
 	for (int i = 0;i < 1601;i++) {
-		if (plaintext[i] == EOF) {
-			ciphertext[i] = EOF;
+		if (i == ptSize) {
 			break;
 		}
 		keystream = 0;
 		for (int j = 0;j < 8;j++) {
-			bit f_A = f(testBit(A.state, 8), testBit(A.state, 30), testBit(A.state, 17), testBit(A.state, 9), testBit(A.state, 5), testBit(A.state, 23), testBit(A.state, 28));
-			bit f_B = f(testBit(B.state, 18), testBit(B.state, 4), testBit(B.state, 31), testBit(B.state, 30), testBit(B.state, 2), testBit(B.state, 10), testBit(B.state, 26));
-			bit f_C = f(testBit(C.state, 22), testBit(C.state, 2), testBit(C.state, 0), testBit(C.state, 29), testBit(C.state, 13), testBit(C.state, 32), testBit(C.state, 28));
+			bit f_A = f(testBit(A.state, 22), testBit(A.state, 0), testBit(A.state, 13), testBit(A.state, 21), testBit(A.state, 25), testBit(A.state, 2), testBit(A.state, 7));
+			bit f_B = f(testBit(B.state, 12), testBit(B.state, 27), testBit(B.state, 0), testBit(B.state, 1), testBit(B.state, 29), testBit(B.state, 21), testBit(B.state, 5));
+			bit f_C = f(testBit(C.state, 10), testBit(C.state, 30), testBit(C.state, 32), testBit(C.state, 3), testBit(C.state, 19), testBit(C.state, 0), testBit(C.state, 4));
 
-			keystream |= f_A ^ f_B ^ f_C;
-			keystream <<= 1;
+			keystream >>= 1;
+			keystream |= (f_A ^ f_B ^ f_C) << 7;
 
 			A.state = clock_lfsr(A, 0);
 			B.state = clock_lfsr(B, 0);
@@ -228,10 +265,7 @@ int main(int argc, char* argv[])
 	char* outFileName = malloc(133*sizeof(char));
 	sprintf(outFileName, "%.128s-enc", inFileName);
 	FILE* outFile = fopenErr(outFileName, "w");
-	for (int i = 0;i < 1601;i++) {
-		if (ciphertext[i] == EOF) break;
-                fputc(ciphertext[i], outFile);
-        }
+	writeBytes(outFile, ciphertext, ptSize);
 	fclose(outFile);
 
 	printf("Wrote encrypted file to %s\n", outFileName);
