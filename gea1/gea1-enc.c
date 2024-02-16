@@ -208,13 +208,13 @@ int main(int argc, char* argv[])
 	word S = 0;
 	     
 	// Initialization of S
-	for (int i = 31;i >= 0;i--) {
+	for (int i = 0;i < 32;i++) {
 		S = clock_S(S, testBit(iv, i));
 	}
 	
 	S = clock_S(S, dir);
 	
-	for (int i = 63;i >= 0;i--) {
+	for (int i = 0;i < 64;i++) {
 		S = clock_S(S, testBit(key, i));
 	}
 	
