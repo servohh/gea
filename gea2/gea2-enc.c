@@ -16,7 +16,7 @@ bit getBitAtPos(word n, unsigned int pos)
 	return (bit)((n >> pos) & 1);
 }
 
-// GEA-1 nonlinear function.
+// GEA-2 nonlinear function.
 // Assumes all inputs are in {0, 1}
 bit f(bit x0, bit x1, bit x2, bit x3, bit x4, bit x5, bit x6) 
 {
@@ -31,6 +31,19 @@ struct lfsr
 	unsigned int length;
 };
 
+// Struct to represent a 97-bit unsigned int
+struct uint97
+{
+	word upper; // Upper 33 bits
+	word lower; // Lower 64 bits
+};
+
+bit uint97_getBit(struct uint97 n, unsigned int pos)
+{
+	if (pos < 64) return (bit)((n.lower >> pos) & 1);
+	else return (bit)((n.upper >> pos) & 1);
+}
+
 // Galois LFSR clock function
 word clock_lfsr(struct lfsr reg, bit in) 
 {
@@ -43,13 +56,16 @@ word clock_lfsr(struct lfsr reg, bit in)
 	return reg.state;
 }
 
-// Clock function for the non-linear feedback register S
-word clock_s(word reg, bit in) 
+// Clock function for the non-linear feedback register W
+struct uint97 clock_w(struct uint97 reg, bit in) 
 {
-	bit output = reg & 1;
-	bit fOut = f(getBitAtPos(reg, 3), getBitAtPos(reg, 12), getBitAtPos(reg, 22), getBitAtPos(reg, 38), getBitAtPos(reg, 42), getBitAtPos(reg, 55), getBitAtPos(reg, 63));
-	reg >>= 1;
-	reg ^= ((word)(in ^ fOut ^ output)) << 63;
+	bit output = reg.lower & 1;
+	bit carry = reg.upper & 1;
+	bit fOut = f(getBitAtPos(reg.lower, 4), getBitAtPos(reg.lower, 18), getBitAtPos(reg.lower, 33), getBitAtPos(reg.lower, 57), getBitAtPos(reg.lower, 63), getBitAtPos(reg.upper, 19), getBitAtPos(reg.upper, 32));
+	reg.upper >>= 1;
+	reg.lower >>= 1;
+	reg.lower ^= (word)carry << 63; // Carry bit from upper to lower
+	reg.upper ^= ((word)(in ^ fOut ^ output)) << 32;
 	return reg;
 }
 
@@ -58,7 +74,7 @@ FILE* fopen_err(char* filename, char* mode)
 {
 	FILE* file = fopen(filename, mode);
 	if (file == NULL) {
-		printf("gea1-enc: error opening file %s\n", filename);
+		printf("gea2-enc: error opening file %s\n", filename);
 	}
 	return file;
 }
@@ -94,7 +110,7 @@ int main(int argc, char* argv[])
 
 	// Managing arguments. FILE and KEY are required - IV and DIR are optional
 	if (argc < 3 || argc > 5) {
-		printf("gea1-enc\nUsage: %s FILE [IV] [DIR] KEY\nTakes 64-bit key from file KEY and encrypts FILE using GEA-1 algorithm. If IV and DIR are not given, they will be randomly chosen.\n", argv[0]);
+		printf("gea2-enc\nUsage: %s FILE [IV] [DIR] KEY\nTakes 64-bit key from file KEY and encrypts FILE using GEA-2 algorithm. If IV and DIR are not given, they will be randomly chosen.\n", argv[0]);
 		return 0;
 	}
 
@@ -181,33 +197,36 @@ int main(int argc, char* argv[])
 		printf("Wrote generated IV to %s\n", ivOutFileName);
 	}
 
+	struct lfsr D = {0, 0b11010010110011010101111111001, 29};
 	struct lfsr A = {0, 0b1011101110110001001101110001101, 31};
 	struct lfsr B = {0, 0b11110001110000001111000001000101, 32};
 	struct lfsr C = {0, 0b101010000111001101111101000100100, 33};
-	word regS = 0;
+	struct uint97 regW = {0, 0};
 	     
-	// Initialization of S
+	// Initialization of W
 	for (int i = 0;i < 32;i++) {
-		regS = clock_s(regS, getBitAtPos(iv, i));
+		regW = clock_w(regW, getBitAtPos(iv, i));
 	}
 	
-	regS = clock_s(regS, dir);
+	regW = clock_w(regW, dir);
 	
 	for (int i = 0;i < 64;i++) {
-		regS = clock_s(regS, getBitAtPos(key, i));
+		regW = clock_w(regW, getBitAtPos(key, i));
 	}
 	
-	for (int i = 0;i < 128;i++) {
-		regS = clock_s(regS, 0);
+	for (int i = 0;i < 194;i++) {
+		regW = clock_w(regW, 0);
 	}
 
 	// Initialization of LFSRs
-	for (int i = 0;i < 64;i++) {
-		A.state = clock_lfsr(A, getBitAtPos(regS, i));
-		B.state = clock_lfsr(B, getBitAtPos(regS, (i + 16) % 64));
-		C.state = clock_lfsr(C, getBitAtPos(regS, (i + 32) % 64));
+	for (int i = 0;i < 97;i++) {
+		D.state = clock_lfsr(D, uint97_getBit(regW, i));
+		A.state = clock_lfsr(A, uint97_getBit(regW, (i + 16) % 97));
+		B.state = clock_lfsr(B, uint97_getBit(regW, (i + 33) % 97));
+		C.state = clock_lfsr(C, uint97_getBit(regW, (i + 51) % 97));
 	}
 
+	if (D.state == 0) D.state = 1;
 	if (A.state == 0) A.state = 1;
 	if (B.state == 0) B.state = 1;
 	if (C.state == 0) C.state = 1;
@@ -221,13 +240,15 @@ int main(int argc, char* argv[])
 		}
 		keystream = 0;
 		for (int j = 0;j < 8;j++) {
+			bit f_D = f(getBitAtPos(D.state, 12), getBitAtPos(D.state, 23), getBitAtPos(D.state, 3), getBitAtPos(D.state, 0), getBitAtPos(D.state, 10), getBitAtPos(D.state, 27), getBitAtPos(D.state, 17));
 			bit f_A = f(getBitAtPos(A.state, 22), getBitAtPos(A.state, 0), getBitAtPos(A.state, 13), getBitAtPos(A.state, 21), getBitAtPos(A.state, 25), getBitAtPos(A.state, 2), getBitAtPos(A.state, 7));
 			bit f_B = f(getBitAtPos(B.state, 12), getBitAtPos(B.state, 27), getBitAtPos(B.state, 0), getBitAtPos(B.state, 1), getBitAtPos(B.state, 29), getBitAtPos(B.state, 21), getBitAtPos(B.state, 5));
 			bit f_C = f(getBitAtPos(C.state, 10), getBitAtPos(C.state, 30), getBitAtPos(C.state, 32), getBitAtPos(C.state, 3), getBitAtPos(C.state, 19), getBitAtPos(C.state, 0), getBitAtPos(C.state, 4));
 
 			keystream >>= 1;
-			keystream |= (f_A ^ f_B ^ f_C) << 7;
+			keystream |= (f_D ^ f_A ^ f_B ^ f_C) << 7;
 
+			D.state = clock_lfsr(D, 0);
 			A.state = clock_lfsr(A, 0);
 			B.state = clock_lfsr(B, 0);
 			C.state = clock_lfsr(C, 0);
