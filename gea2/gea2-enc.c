@@ -121,14 +121,14 @@ int main(int argc, char* argv[])
 	char* ivFileName;
 	bit dir;
 
-	int i = 1;
-	while (i < argc) {
-		if (isdigit((int)*argv[i])) {
+	int dirI = 1; // Will hold the position of the dir bit in argv
+	while (dirI < argc) {
+		if (isdigit((int)*argv[dirI])) {
 			chosenDir = true;
-			dir = atoi(argv[i]);
+			dir = atoi(argv[dirI]);
 			break;
 		}
-		i++;
+		dirI++;
 	}
 	
 	if (argc == 3) {
@@ -141,7 +141,7 @@ int main(int argc, char* argv[])
 		}
 	} else if (argc == 5 && chosenDir) {
 		chosenIV = true;
-		ivFileName = argv[((i + 1) % 2) + 2]; // if the argument number of dir is 2 this will be 3, and vice versa
+		ivFileName = argv[((dirI + 1) % 2) + 2]; // if the argument number of dir is 2 this will be 3, and vice versa
 		keyFileName = argv[4];
 	}
 
