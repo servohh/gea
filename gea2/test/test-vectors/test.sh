@@ -2,7 +2,7 @@
 
 # Runs all 7 test vectors automatically
 
-cc ../gea2-enc.c
+cc ../../gea2-enc.c
 
 for i in {1..7} 
 do

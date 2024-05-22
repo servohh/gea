@@ -1,6 +1,7 @@
 #include <NTL/GF2.h>
 #include <NTL/vec_GF2.h>
 #include <NTL/mat_GF2.h>
+#include "attack-parms.h"
 
 using namespace NTL;
 

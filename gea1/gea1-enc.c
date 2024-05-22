@@ -201,6 +201,8 @@ int main(int argc, char* argv[])
 		regS = clock_s(regS, 0);
 	}
 
+	printf("%lx\n", regS);
+	
 	// Initialization of LFSRs
 	for (int i = 0;i < 64;i++) {
 		A.state = clock_lfsr(A, getBitAtPos(regS, i));

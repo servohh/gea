@@ -7,17 +7,7 @@
 #include <cstring>
 #include <cstdio>
 #include "define-matrices.h"
-
-#define CONST_L 72
-#define ENTRY_SIZE (CONST_L + 24) / 8
-#define TAPS_B 0b10100010000011110000001110001111
-#define SHIFT_B 16
-
-#define SIZE_V 1 << 8
-#define SIZE_TAC 1 << 24
-#define SIZE_UB 1 << 32
-
-#define NUM_THREADS 16
+#include "gea1-func.h"
 
 using namespace NTL;
 using namespace std;
@@ -32,12 +22,6 @@ void span(Vec<GF2>& v, Mat<GF2>& A, long n, int l)
 	}
 	v = transpose(A) * multVec;
 	multVec.kill();
-}
-
-// GEA-1 nonlinear function
-GF2 f(GF2 x0, GF2 x1, GF2 x2, GF2 x3, GF2 x4, GF2 x5, GF2 x6)
-{
-        return x0+x2+x5+x6 * x0+x3+x5+x6 * x0+x1+x5+x6 * x1+x2+x5+x6 * x0+x2+x3+x6 * x1+x3+x4+x6 * x1+x3+x5+x6 * x0+x2+x4 * x0+x2+x3 * x0+x1+x3 * x0+x2+x6 * x0+x1+x4 * x0+x1+x6 * x1+x2+x6 * x2+x5+x6 * x0+x3+x5 * x1+x4+x6 * x1+x2+x5 * x0+x3 * x0+x5 * x1+x3 * x1+x5 * x1+x6 * x0+x2 * x1 * x2+x3 * x2+x5 * x2+x6 * x4+x5 * x5+x6 * x2 * x3 * x5;
 }
 
 // Quicksort algorithm on table Tab[v]
@@ -71,6 +55,18 @@ void sort(unsigned char* tab, long left, long right)
 	sort(tab, j + ENTRY_SIZE, right);
 }
 
+struct lfsr getLFSR(Vec<GF2> vect, uint64_t taps)
+{
+        uint64_t state = 0;
+	int size = vect.length();
+        for (int i = 0;i < size;i++) {
+                state >>= 1;
+		state |= IsOne(vect[i]) << (size - 1);
+        }
+        struct lfsr reg = {state, taps, (unsigned int) size};
+        return reg;
+}
+
 int main()
 {
 	SetNumThreads(NUM_THREADS);
@@ -100,30 +96,14 @@ int main()
 		int tabIndex = 0;	
 		for (long j = 0;j < SIZE_TAC;j++) {
 			span(vec_t, T_AC, j, 24);
+			cout << vec_t << "\n";
 			for (int a = 0;a < 3;a++) {
 				tab_v[tabIndex + a] = (unsigned char) (j >> ((2 - a) * 8));
 			}
 			B_tv = M_B * (vec_t + vec_v);
-			GF2 outBit;
-			int out = 0;
-			int outLength = 0;
-			int index_b = 3;
-			for (int k = 0;k < CONST_L;k++) {
-				outBit = f(B_tv[12], B_tv[27], B_tv[0], B_tv[1], B_tv[29], B_tv[21], B_tv[5]);
-				B_tv = B_Mat * B_tv;
-				out <<= 1;
-				out += IsOne(outBit);
-				outLength++;
-				if (outLength == 8) {
-					tab_v[tabIndex + index_b] = out;
-					index_b++;
-					outLength = 0;
-					out = 0;
-				}
-			}
-			if (out != 0) {
-				tab_v[tabIndex + index_b] = out;
-			}
+			struct lfsr B = getLFSR(B_tv, 0b11110001110000001111000001000101);
+			if (B.state == 0) B.state = 1;
+			generateOutputB(B, tab_v + tabIndex + 3);
 			tabIndex += ENTRY_SIZE;
 		}
 		sort(tab_v, 0, ENTRY_SIZE * ((SIZE_TAC) - 1));	

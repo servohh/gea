@@ -1,14 +1,7 @@
 #include <NTL/GF2.h>
 #include <NTL/vec_GF2.h>
 #include <NTL/mat_GF2.h>
-
-#define TAPS_A 0b1011000111011001000110111011101
-#define TAPS_B 0b10100010000011110000001110001111
-#define TAPS_C 0b001001000101111101100111000010101
-
-#define SHIFT_A 0
-#define SHIFT_B 16
-#define SHIFT_C 32
+#include "attack-parms.h"
 
 using namespace std;
 using namespace NTL;

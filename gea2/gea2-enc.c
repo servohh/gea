@@ -158,11 +158,11 @@ int main(int argc, char* argv[])
 	}
 	free(keyBuf);
 
-	char* plaintext = malloc(1501*sizeof(char));
+	char* plaintext = malloc(1600*sizeof(char));
 	int ptSize;
 	FILE* inFile = fopen_err(inFileName, "r");
 	if (inFile == NULL) return 1;
-	ptSize = read_bytes(inFile, plaintext, 1501);
+	ptSize = read_bytes(inFile, plaintext, 1600);
 	fclose(inFile);
 
 	if (chosenDir == false) dir = rand() % 2;
@@ -232,9 +232,9 @@ int main(int argc, char* argv[])
 	if (C.state == 0) C.state = 1;
 
 	// Encrypting the message
-	char* ciphertext = malloc(1601*sizeof(char));
+	char* ciphertext = malloc(1600*sizeof(char));
 	unsigned char keystream;
-	for (int i = 0;i < 1501;i++) {
+	for (int i = 0;i < 1600;i++) {
 		if (i == ptSize) {
 			break;
 		}
