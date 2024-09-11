@@ -1,6 +1,8 @@
 # GPRS Encryption Algorithm
 
-Key and IV files are big-endian, i.e.: an IV file containing [0xFF, 0x00, 0x23, 0x74] gets read as 0xFF002374.
+This repository contains a reference implementation of the outdated GPRS encryption algorithms GEA-1 and GEA-2 in C. It also contains an implementation of the cryptanalysis of GEA-1 described by [Beierle et al](https://eprint.iacr.org/2021/819).
+
+Usage note: key and IV files are big-endian, i.e.: an IV file containing [0xFF, 0x00, 0x23, 0x74] gets read as 0xFF002374.
 
 ## GEA-1 and GEA-2
 
